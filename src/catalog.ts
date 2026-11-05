@@ -1,6 +1,6 @@
 export const APP_TITLE = '지니어스 게임';
 export type Product = { id:string; name:string; description:string; price:number|null; enabled:boolean };
-export type Game = { id:string; name:string; description:string; symbol:string; color:string; url:string|null; thumbnail:string|null; type:'winner'|'rank'|'direct'; product:Product };
+export type Game = { id:string; name:string; description:string; introduction?:string; symbol:string; color:string; url:string|null; thumbnail:string|null; type:'winner'|'rank'|'direct'; product:Product };
 // 실제 제공받은 고정 URL·이미지·이용권 정보만 이 파일에 입력합니다.
 const GAME_URLS: Record<string,string> = {
   "jury": "https://issamgpt.com/s/b7OiiSpSyl",

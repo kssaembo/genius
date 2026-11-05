@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {persist,load,KEY} from './storage';
 import {CATALOG} from './catalog';
-import {adjustGarnets,resetSeason,createSeason,makeMatch,calculate,makeRule,pay,cancelRound,totals,ranking,transaction,buyTicket,refundTicket,validateBackup,makeRound,type State} from './core';
-const fresh=()=>createSeason('테스트 시즌','테스트 학급','1 가람\n2 나래\n3 다온',5,['bean']);
-function withResults(){const s=fresh();const r=s.rounds[0];r.status='draft';r.matches=[makeMatch(s)];r.matches[0].entries[0].winner=true;r.matches[0].entries[2].participated=false;return s;}
+import {toDirectRound,reorderRounds,adjustGarnets,resetSeason,createSeason,makeMatch,calculate,makeRule,pay,cancelRound,totals,ranking,transaction,buyTicket,refundTicket,validateBackup,makeRound,type State} from './core';
+const fresh=()=>createSeason('테스트 시즌','테스트 학급','가람\n나래\n다온',5,['bean']);
+function withResults(){const s=fresh();const r=s.rounds[0];r.rule=makeRule('winner');r.status='draft';r.matches=[makeMatch(s)];r.matches[0].entries[0].winner=true;r.matches[0].entries[2].participated=false;return s;}
 test('참가 + 우승 추가 · 미참가 · 수동 조정',()=>{const s=withResults(),r=s.rounds[0];assert.equal(calculate(r.rule,r.matches[0].entries[0]).total,4);assert.equal(calculate(r.rule,r.matches[0].entries[1]).total,1);assert.equal(calculate(r.rule,r.matches[0].entries[2]).total,0);assert.equal(calculate(r.rule,{...r.matches[0].entries[0],adjustment:-1}).total,3);assert.throws(()=>calculate(r.rule,{...r.matches[0].entries[0],adjustment:-8}));});
 test('공동 순위와 미설정 순위 · 순위 누락 차단',()=>{const s=withResults(),e=s.rounds[0].matches[0].entries[0],rule=makeRule('rank');assert.equal(calculate(rule,{...e,rank:2}).total,3);assert.equal(calculate(rule,{...e,rank:9}).total,1);assert.throws(()=>calculate(rule,e));});
 test('직접 배정',()=>{const e=withResults().rounds[0].matches[0].entries[0];assert.equal(calculate(makeRule('direct'),{...e,direct:9}).total,9);});
@@ -24,13 +24,13 @@ test('교사 증감 · 순위 반영 · 시작 가넷 차감 · 잔액 부족 �
  s=adjustGarnets(s,id,-4);assert.deepEqual(totals(s,id),{balance:4,earned:0});
  assert.doesNotThrow(()=>validateBackup(s));assert.throws(()=>adjustGarnets(s,id,-5));assert.throws(()=>adjustGarnets(s,id,0));assert.throws(()=>adjustGarnets(s,id,1.5));
 });
-test('시즌 초기화 · 명단/설정 유지 · 결과/거래/이용권 초기화 · 재지급',()=>{
- let s=withResults();s=pay(s,s.rounds[0].id);s.rounds[0].product={id:'hint',name:'힌트',description:'한 번',enabled:true,price:1};s=buyTicket(s,s.rounds[0].id,s.students[0].id);
- const next=resetSeason(s);assert.deepEqual(next.students,s.students);assert.deepEqual(next.rounds[0].product,s.rounds[0].product);assert.equal(next.rounds[0].status,'scheduled');assert.equal(next.rounds[0].batchId,null);assert.deepEqual(next.rounds[0].matches,[]);assert.equal(next.tickets.length,0);assert.equal(next.ledger.length,3);assert.deepEqual(totals(next,next.students[0].id),{balance:5,earned:0});assert.doesNotThrow(()=>validateBackup(next));next.rounds[0].matches=[makeMatch(next)];assert.doesNotThrow(()=>pay(next,next.rounds[0].id));
-});
+test('시즌 초기화 · 명단 유지 · 결과와 장부 초기화',()=>{let s=withResults();s=pay(s,s.rounds[0].id);const next=resetSeason(s);assert.deepEqual(next.students,s.students);assert.equal(next.rounds[0].status,'scheduled');assert.equal(next.rounds[0].batchId,null);assert.equal(next.rounds[0].matches.length,0);assert.equal(next.tickets.length,0);assert.deepEqual(totals(next,next.students[0].id),{balance:5,earned:0});assert.doesNotThrow(()=>validateBackup(next));});
 test('이전 보상 백업의 금액 보존 · 팀 필드 제거',()=>{
  const old=withResults() as any;old.rounds[0].rule={type:'team',participation:1,winner:3,ranks:[4,2,1],teams:{A:3,B:0}};old.rounds[0].matches[0].entries.forEach((e:any)=>{e.team='A';});const migrated=validateBackup(old);assert.equal(migrated.rounds[0].rule.type,'direct');assert.equal(calculate(migrated.rounds[0].rule,migrated.rounds[0].matches[0].entries[0]).total,4);assert.ok(!('teams' in migrated.rounds[0].rule));assert.ok(!('team' in migrated.rounds[0].matches[0].entries[0]));
 });
-test('회차별 이용권 설정 백업/구매/환불 · 변경 후 기존 구매 금액 유지',()=>{
- let s=fresh();const r=s.rounds[0],id=s.students[0].id;r.product={id:'hint',name:'힌트',description:'단서 한 번',enabled:true,price:2};s=buyTicket(s,r.id,id);s.rounds[0].product!.price=4;assert.equal(s.tickets[0].price,2);assert.doesNotThrow(()=>validateBackup(s));s=refundTicket(s,s.tickets[0].id);assert.equal(totals(s,id).balance,5);s.rounds[0].product!.price=-1;assert.throws(()=>validateBackup(s));
-});
+test('이용권은 고정 상품 정보로 구매 · 이전 설정은 구매에 영향 없음',()=>{let s=fresh();const r=s.rounds[0],id=s.students[0].id,p=CATALOG.find(g=>g.id===r.gameId)!.product,old={...p};try{r.product={id:'old',name:'old',description:'old',enabled:true,price:99};Object.assign(p,{id:'fixed',name:'힌트',description:'힌트 한 번',enabled:true,price:2});s=buyTicket(s,r.id,id);assert.equal(s.tickets[0].price,2);assert.equal(s.tickets[0].name,'힌트');assert.doesNotThrow(()=>validateBackup(s));s=refundTicket(s,s.tickets[0].id);assert.equal(totals(s,id).balance,5);}finally{Object.assign(p,old);}});
+test('이름만 등록하고 내부 식별 순서는 자동 부여',()=>{const s=createSeason('시즌','','하늘\n바다',0,['bean']);assert.deepEqual(s.students.map(p=>p.name),['하늘','바다']);assert.deepEqual(s.students.map(p=>p.number),['1','2']);assert.equal(s.rounds[0].rule.type,'direct');});
+test('기존 미지급 결과를 직접 지급으로 변환할 때 총액 보존',()=>{const s=withResults(),r=s.rounds[0];const before=r.matches[0].entries.map(e=>calculate(r.rule,e).total);const direct=toDirectRound(r);assert.equal(direct.rule.type,'direct');assert.deepEqual(direct.matches[0].entries.map(e=>calculate(direct.rule,e).total),before);const paid=pay(s,r.id).rounds[0];assert.deepEqual(toDirectRound(paid),paid);});
+test('드래그 정렬은 게임 ID와 지급 기록 보존 · 잘못된 ID 차단',()=>{let s=withResults();s=pay(s,s.rounds[0].id);s.rounds.push(makeRound('maze'),makeRound('laser'));const ids=s.rounds.map(r=>r.id);const next=reorderRounds(s,ids[0],ids[2]);assert.deepEqual(next.rounds.map(r=>r.id),[ids[1],ids[2],ids[0]]);assert.deepEqual(next.ledger,s.ledger);assert.doesNotThrow(()=>validateBackup(next));assert.throws(()=>reorderRounds(s,'missing',ids[0]));});
+
+test('수동 차감 후 누적 가넷이 부족하면 회차 지급 취소 차단',()=>{let s=withResults();s=pay(s,s.rounds[0].id);s=adjustGarnets(s,s.students[0].id,-4);assert.throws(()=>cancelRound(s,s.rounds[0].id),/누적/);assert.doesNotThrow(()=>validateBackup(s));});
