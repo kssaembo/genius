@@ -2,6 +2,18 @@ export const APP_TITLE = '지니어스 게임';
 export type Product = { id:string; name:string; description:string; price:number|null; enabled:boolean };
 export type Game = { id:string; name:string; description:string; symbol:string; color:string; url:string|null; thumbnail:string|null; type:'winner'|'rank'|'direct'; product:Product };
 // 실제 제공받은 고정 URL·이미지·이용권 정보만 이 파일에 입력합니다.
+const GAME_URLS: Record<string,string> = {
+  "jury": "https://issamgpt.com/s/b7OiiSpSyl",
+  "virus": "https://issamgpt.com/s/9dUNGcpqv4",
+  "bean": "https://issamgpt.com/s/owbcQEBN3y",
+  "harvest": "https://issamgpt.com/s/dC7bZ8c4K2",
+  "number": "https://issamgpt.com/s/3aj9n4PSir",
+  "monopoly": "https://issamgpt.com/s/JXnyHTeHkP",
+  "twelve": "https://twelvej.vercel.app/",
+  "laser": "https://laserjang.vercel.app/",
+  "blackwhite": "https://issamgpt.com/s/R9ZhI81Qp1",
+  "maze": "https://mazegame-chi.vercel.app/"
+};
 export const CATALOG:Game[] = [
  ['jury','배심원 게임','설득과 판단, 서로의 생각을 읽는 시간','⚖','sage','direct'],
  ['virus','바이러스 게임','보이지 않는 선택이 만드는 새로운 판도','✳','red','direct'],
@@ -13,4 +25,4 @@ export const CATALOG:Game[] = [
  ['laser','레이저 장기','빛의 경로를 읽고 다음 수를 설계하라','↗','red','rank'],
  ['blackwhite','흑과 백','드러난 색 뒤에 숨겨진 숫자의 심리전','◐','blue','rank'],
  ['maze','기억의 미로','기억과 논리로 보이지 않는 길을 열어라','▦','olive','rank'],
-].map(([id,name,description,symbol,color,type])=>({id,name,description,symbol,color,url:null,thumbnail:null,type:type as Game['type'],product:{id:`ticket-${id}`,name:'이용권 준비 중',description:'이용권 내용과 가격이 아직 등록되지 않았습니다.',price:null,enabled:false}}));
+].map(([id,name,description,symbol,color,type])=>({id,name,description,symbol,color,url:GAME_URLS[id]??null,thumbnail:null,type:type as Game['type'],product:{id:`ticket-${id}`,name:'이용권 준비 중',description:'이용권 내용과 가격이 아직 등록되지 않았습니다.',price:null,enabled:false}}));
