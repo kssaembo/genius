@@ -1,1 +1,1 @@
-export default { base: './' };
+export default { base: './', server: { allowedHosts: ['terminal.local'] } };

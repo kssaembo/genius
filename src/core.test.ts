@@ -2,12 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {persist,load,KEY} from './storage';
 import {CATALOG} from './catalog';
-import {createSeason,makeMatch,calculate,makeRule,pay,cancelRound,totals,ranking,transaction,buyTicket,refundTicket,validateBackup,makeRound,type State} from './core';
+import {adjustGarnets,resetSeason,createSeason,makeMatch,calculate,makeRule,pay,cancelRound,totals,ranking,transaction,buyTicket,refundTicket,validateBackup,makeRound,type State} from './core';
 const fresh=()=>createSeason('테스트 시즌','테스트 학급','1 가람\n2 나래\n3 다온',5,['bean']);
 function withResults(){const s=fresh();const r=s.rounds[0];r.status='draft';r.matches=[makeMatch(s)];r.matches[0].entries[0].winner=true;r.matches[0].entries[2].participated=false;return s;}
 test('참가 + 우승 추가 · 미참가 · 수동 조정',()=>{const s=withResults(),r=s.rounds[0];assert.equal(calculate(r.rule,r.matches[0].entries[0]).total,4);assert.equal(calculate(r.rule,r.matches[0].entries[1]).total,1);assert.equal(calculate(r.rule,r.matches[0].entries[2]).total,0);assert.equal(calculate(r.rule,{...r.matches[0].entries[0],adjustment:-1}).total,3);assert.throws(()=>calculate(r.rule,{...r.matches[0].entries[0],adjustment:-8}));});
 test('공동 순위와 미설정 순위 · 순위 누락 차단',()=>{const s=withResults(),e=s.rounds[0].matches[0].entries[0],rule=makeRule('rank');assert.equal(calculate(rule,{...e,rank:2}).total,3);assert.equal(calculate(rule,{...e,rank:9}).total,1);assert.throws(()=>calculate(rule,e));});
-test('팀 보상과 직접 배정',()=>{const e=withResults().rounds[0].matches[0].entries[0];assert.equal(calculate(makeRule('team'),{...e,team:'A팀'}).total,4);assert.equal(calculate(makeRule('direct'),{...e,direct:9}).total,9);});
+test('직접 배정',()=>{const e=withResults().rounds[0].matches[0].entries[0];assert.equal(calculate(makeRule('direct'),{...e,direct:9}).total,9);});
 test('순위는 획득만 · 공동 1,1,3 · 번호는 동점 순위에 무관',()=>{let s=fresh();const [a,b,c]=s.students;s.ledger.push(transaction(s,a.id,'bonus',4,4),transaction(s,b.id,'bonus',4,4),transaction(s,c.id,'purchase',99));const rank=ranking(s);assert.deepEqual(rank.map(x=>x.rank),[1,1,3]);assert.equal(totals(s,c.id).balance,104);assert.equal(totals(s,c.id).earned,0);});
 test('시작 지급은 순위에 제외 · 중복 지급 차단 · 취소 후 재지급',()=>{let s=withResults(),id=s.rounds[0].id;assert.equal(totals(s,s.students[0].id).earned,0);s=pay(s,id);assert.equal(totals(s,s.students[0].id).balance,9);assert.throws(()=>pay(s,id));const paid=validateBackup(JSON.parse(JSON.stringify(s)));assert.equal(paid.ledger.length,s.ledger.length);s=cancelRound(s,id);assert.equal(totals(s,s.students[0].id).balance,5);assert.equal(totals(s,s.students[0].id).earned,0);assert.throws(()=>cancelRound(s,id));s=pay(s,id);assert.equal(totals(s,s.students[0].id).earned,4);assert.doesNotThrow(()=>validateBackup(s));});
 test('여러 경기 보상 합산',()=>{let s=withResults();s.rounds[0].matches.push(makeMatch(s,'경기 2'));s=pay(s,s.rounds[0].id);assert.equal(totals(s,s.students[0].id).earned,5);});
@@ -17,3 +17,20 @@ test('백업 JSON 왕복 · 중복 학생·잘못된 참조·금액·버전 차�
 test('중복 경기 학생·중복 보상 장부·변조된 취소 차단',()=>{let s=withResults();s.rounds[0].matches[0].entries.push(s.rounds[0].matches[0].entries[0]);assert.throws(()=>pay(s,s.rounds[0].id));s=withResults();s=pay(s,s.rounds[0].id);const bad=structuredClone(s);bad.ledger.push({...bad.ledger.find(x=>x.kind==='reward')!,id:crypto.randomUUID()});assert.throws(()=>validateBackup(bad));s=cancelRound(s,s.rounds[0].id);s.ledger.find(x=>x.kind==='reversal')!.balance=0;assert.throws(()=>validateBackup(s));});
 test('같은 게임 여러 회차는 다른 고유 ID',()=>{const a=makeRound('bean'),b=makeRound('bean');assert.notEqual(a.id,b.id);});
 test('자동 저장 · 재로드 · 충돌 차단 · 저장 실패 시 기존 원본 보존',async()=>{const memory=new Map<string,string>();let fail=false;Object.defineProperty(globalThis,'localStorage',{configurable:true,value:{getItem:(k:string)=>memory.get(k)??null,setItem:(k:string,v:string)=>{if(fail&&k===KEY)throw Error('quota');memory.set(k,v);}}});Object.defineProperty(globalThis,'navigator',{configurable:true,value:{locks:{request:async(_key:string,fn:()=>State)=>fn()}}});const saved=await persist(fresh(),null);assert.equal(load().state?.revision,1);const next=await persist({...saved,name:'변경'},1);assert.equal(load().state?.name,'변경');assert.ok(memory.get(KEY+'-previous'));await assert.rejects(()=>persist(saved,1),/다른 탭/);fail=true;await assert.rejects(()=>persist({...next,name:'저장 실패'},2),/저장하지 못했습니다/);assert.equal(load().state?.name,'변경');memory.set(KEY,'damaged-json');assert.ok(load().error);assert.equal(memory.get(KEY),'damaged-json');});
+
+test('교사 증감 · 순위 반영 · 시작 가넷 차감 · 잔액 부족 차단',()=>{
+ let s=fresh();const id=s.students[0].id;
+ s=adjustGarnets(s,id,3);assert.deepEqual(totals(s,id),{balance:8,earned:3});
+ s=adjustGarnets(s,id,-4);assert.deepEqual(totals(s,id),{balance:4,earned:0});
+ assert.doesNotThrow(()=>validateBackup(s));assert.throws(()=>adjustGarnets(s,id,-5));assert.throws(()=>adjustGarnets(s,id,0));assert.throws(()=>adjustGarnets(s,id,1.5));
+});
+test('시즌 초기화 · 명단/설정 유지 · 결과/거래/이용권 초기화 · 재지급',()=>{
+ let s=withResults();s=pay(s,s.rounds[0].id);s.rounds[0].product={id:'hint',name:'힌트',description:'한 번',enabled:true,price:1};s=buyTicket(s,s.rounds[0].id,s.students[0].id);
+ const next=resetSeason(s);assert.deepEqual(next.students,s.students);assert.deepEqual(next.rounds[0].product,s.rounds[0].product);assert.equal(next.rounds[0].status,'scheduled');assert.equal(next.rounds[0].batchId,null);assert.deepEqual(next.rounds[0].matches,[]);assert.equal(next.tickets.length,0);assert.equal(next.ledger.length,3);assert.deepEqual(totals(next,next.students[0].id),{balance:5,earned:0});assert.doesNotThrow(()=>validateBackup(next));next.rounds[0].matches=[makeMatch(next)];assert.doesNotThrow(()=>pay(next,next.rounds[0].id));
+});
+test('이전 보상 백업의 금액 보존 · 팀 필드 제거',()=>{
+ const old=withResults() as any;old.rounds[0].rule={type:'team',participation:1,winner:3,ranks:[4,2,1],teams:{A:3,B:0}};old.rounds[0].matches[0].entries.forEach((e:any)=>{e.team='A';});const migrated=validateBackup(old);assert.equal(migrated.rounds[0].rule.type,'direct');assert.equal(calculate(migrated.rounds[0].rule,migrated.rounds[0].matches[0].entries[0]).total,4);assert.ok(!('teams' in migrated.rounds[0].rule));assert.ok(!('team' in migrated.rounds[0].matches[0].entries[0]));
+});
+test('회차별 이용권 설정 백업/구매/환불 · 변경 후 기존 구매 금액 유지',()=>{
+ let s=fresh();const r=s.rounds[0],id=s.students[0].id;r.product={id:'hint',name:'힌트',description:'단서 한 번',enabled:true,price:2};s=buyTicket(s,r.id,id);s.rounds[0].product!.price=4;assert.equal(s.tickets[0].price,2);assert.doesNotThrow(()=>validateBackup(s));s=refundTicket(s,s.tickets[0].id);assert.equal(totals(s,id).balance,5);s.rounds[0].product!.price=-1;assert.throws(()=>validateBackup(s));
+});

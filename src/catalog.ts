@@ -1,10 +1,10 @@
-export const APP_TITLE = '지니어스 시즌';
+export const APP_TITLE = '지니어스 게임';
 export type Product = { id:string; name:string; description:string; price:number|null; enabled:boolean };
-export type Game = { id:string; name:string; description:string; symbol:string; color:string; url:string|null; thumbnail:string|null; type:'winner'|'rank'|'team'|'direct'; product:Product };
+export type Game = { id:string; name:string; description:string; symbol:string; color:string; url:string|null; thumbnail:string|null; type:'winner'|'rank'|'direct'; product:Product };
 // 실제 제공받은 고정 URL·이미지·이용권 정보만 이 파일에 입력합니다.
 export const CATALOG:Game[] = [
- ['jury','배심원 게임','설득과 판단, 서로의 생각을 읽는 시간','⚖','sage','team'],
- ['virus','바이러스 게임','보이지 않는 선택이 만드는 새로운 판도','✳','red','team'],
+ ['jury','배심원 게임','설득과 판단, 서로의 생각을 읽는 시간','⚖','sage','direct'],
+ ['virus','바이러스 게임','보이지 않는 선택이 만드는 새로운 판도','✳','red','direct'],
  ['bean','콩의 딜레마','협력과 선택 사이, 우리의 전략은?','◉','olive','winner'],
  ['harvest','풍요와 기근','변화하는 상황 속에서 자원을 지켜라','✺','gold','rank'],
  ['number','비밀 숫자','작은 단서로 비밀의 숫자를 찾아라','?','blue','rank'],
